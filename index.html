@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>イトノヴァ - ITONOVA</title>
+<style>
+html,body{margin:0;height:100%;background:#090019;overflow:hidden;font-family:system-ui,-apple-system,sans-serif}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#hint{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);color:#fff;font-weight:800;font-size:14px;opacity:.75;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hint">画面をスワイプして、糸を穴へ！</div>
+<script>
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,DPR,mode='title',score=0,best=+localStorage.itoBest||0,combo=0,time=20,startT=0;
+let thread={x:80,y:0},needle={x:0,y:0,r:30,vy:0},last={x:0,y:0},audio=null,beat=0,raf;
+
+function resize(){DPR=devicePixelRatio||1;W=innerWidth;H=innerHeight;c.width=W*DPR;c.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);needle.y=H*.57}
+addEventListener('resize',resize);resize();
+
+function audioStart(){
+ if(audio)return;
+ audio=new (window.AudioContext||window.webkitAudioContext)();
+ let master=audio.createGain(); master.gain.value=.06; master.connect(audio.destination);
+ let bass=audio.createOscillator(), g=audio.createGain(); bass.type='sawtooth'; bass.frequency.value=55; g.gain.value=.0;
+ bass.connect(g).connect(master); bass.start();
+ setInterval(()=>{if(mode==='play'){let t=audio.currentTime;g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.5,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+.18);bass.frequency.setValueAtTime([55,65.4,73.4,49][beat++%4],t)}},250);
+}
+function sfx(freq,d=.08,type='square'){
+ if(!audio)return;let o=audio.createOscillator(),g=audio.createGain(),t=audio.currentTime;o.type=type;o.frequency.value=freq;
+ g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.12,t+.01);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(audio.destination);o.start(t);o.stop(t+d+.02)
+}
+function boom(){
+ if(!audio)return;let t=audio.currentTime, o=audio.createOscillator(),g=audio.createGain();o.type='sawtooth';o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(35,t+.45);g.gain.setValueAtTime(.18,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);o.connect(g).connect(audio.destination);o.start();o.stop(t+.55)
+}
+function start(){audioStart();audio.resume();mode='play';score=0;combo=0;time=20;startT=performance.now();newNeedle();hint.style.display='none'}
+function newNeedle(){needle.x=70+Math.random()*(W-140);needle.y=H*.42+Math.random()*H*.38;needle.r=Math.max(16,30-combo*.35);thread.x=80;thread.y=H*.75}
+function fail(){mode='over';boom();best=Math.max(best,score);localStorage.itoBest=best}
+function success(){combo++;score+=100+combo*25;sfx(500+combo*35,.09,'triangle');newNeedle()}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+c.addEventListener('pointerdown',e=>{if(mode==='title'){start();return} if(mode==='over'){start();return} last={x:e.clientX,y:e.clientY};thread.x=e.clientX;thread.y=e.clientY});
+c.addEventListener('pointermove',e=>{if(mode!=='play')return;thread.x=e.clientX;thread.y=e.clientY;last={x:e.clientX,y:e.clientY}});
+c.addEventListener('pointerup',()=>{if(mode!=='play')return;if(dist(thread,needle)<needle.r+7)success();else fail()});
+
+function bg(){
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#11002e');g.addColorStop(.55,'#29105e');g.addColorStop(1,'#070016');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ ctx.globalAlpha=.18;for(let y=0;y<H;y+=5){ctx.fillStyle='#fff';ctx.fillRect(0,y,W,1)}ctx.globalAlpha=1;
+ ctx.fillStyle='#ff5bd7';ctx.beginPath();ctx.arc(W*.5,H*.22,Math.min(W,H)*.14,0,7);ctx.fill();
+ ctx.fillStyle='#0b0820';for(let x=0;x<W;x+=35){let h=30+Math.random()*80;ctx.fillRect(x,H*.36-h,28,h)}
+}
+function text(t,x,y,size,fill='#fff',align='center'){ctx.font=`900 ${size}px monospace`;ctx.textAlign=align;ctx.fillStyle=fill;ctx.fillText(t,x,y)}
+function draw(){
+ bg();
+ if(mode==='title'){
+  text('イトノヴァ',W/2,H*.30,54,'#ff67e7');text('— ITONOVA —',W/2,H*.36,18,'#67e9ff');
+  text('NEO-SHOWA SPACE ARCADE',W/2,H*.43,15,'#ffe45c');
+  text('タップしてスタート',W/2,H*.70,25,'#fff');
+  text(`BEST  ${best}`,W/2,H*.78,18,'#67e9ff');
+ } else if(mode==='play'){
+  text(`SCORE ${score}`,18,38,18,'#67e9ff','left');text(`COMBO ${combo}`,W/2,38,18,'#ffe45c');text(`${Math.max(0,time).toFixed(1)}s`,W-18,38,18,'#ff67e7','right');
+  // needle
+  ctx.save();ctx.translate(needle.x,needle.y);ctx.rotate(-.08);ctx.strokeStyle='#fff';ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(0,-75);ctx.lineTo(0,75);ctx.stroke();ctx.strokeStyle='#bbb';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(0,-35,needle.r*.55,needle.r,0,0,7);ctx.stroke();ctx.restore();
+  // thread
+  ctx.strokeStyle='#45eaff';ctx.lineWidth=5;ctx.shadowBlur=15;ctx.shadowColor='#45eaff';ctx.beginPath();ctx.moveTo(0,H*.9);ctx.quadraticCurveTo(W*.25,H*.65,thread.x,thread.y);ctx.stroke();ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(thread.x,thread.y,7,0,7);ctx.fill();
+  if(performance.now()-startT>1000){time=20-(performance.now()-startT)/1000;if(time<=0)fail()}
+ } else {
+  text('GAME OVER',W/2,H*.30,48,'#ff4b4b');text(`SCORE  ${score}`,W/2,H*.44,28,'#ffe45c');text(`BEST   ${best}`,W/2,H*.51,22,'#67e9ff');text(`COMBO  ${combo}`,W/2,H*.58,22,'#ff67e7');text('タップでリトライ',W/2,H*.74,22,'#fff');
+ }
+ requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body></html>
